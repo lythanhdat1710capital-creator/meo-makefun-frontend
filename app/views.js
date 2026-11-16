@@ -1,12 +1,16 @@
-// The four surfaces, each a function from API data to HTML. Every value the
-// API sends passes through esc() in format.js before it reaches the page.
+// The four surfaces, each a function from API data to HTML. Every value
+// the API sends passes through esc() in format.js before it reaches the
+// page, and every image the API points at loads from make.fun itself.
 //
-// The board is one request: the list already carries each bounty's live pot,
-// entry fee, deadline and entry count, so no bounty is fetched twice.
-// The leaderboard is one request too: rows=first brings the top 10 in full
-// plus the rest in compact form, and the table pages through them locally.
+// The board is one request: the list already carries each bounty's live
+// pot, entry fee, deadline and entry count, so no bounty is fetched twice.
+// The leaderboard is one request too: rows=first brings the top 10 in
+// full plus the rest in compact form, and the table pages through them
+// locally. The search box on the board filters the rows already on the
+// page, so typing never costs a request.
 
-import { bytes, date, esc, money, num, pct, takingEntries, timeLeft } from './format.js';
+import { absImage } from './api.js';
+import { bytes, date, esc, money, num, ordinal, pct, takingEntries, timeAgo, timeLeft } from './format.js';
 
 /** The live pot: the prize plus the entry fees paid into it. */
 export function pot(b) {
@@ -25,8 +29,8 @@ function statusPill(b) {
     : '<span class="pill pill-ended">Ended</span>';
 }
 
-/** The board: stat strip, filters, and one row per bounty. */
-export function boardView(items, filter, sort) {
+/** The board: stat strip, search, filters, and one row per bounty. */
+export function boardView(items, filter, sort, query) {
   const now = Date.now();
   const open = items.filter((b) => takingEntries(b));
   const endingSoon = open.filter((b) => new Date(b.deadline).getTime() - now < 86400000);
@@ -60,13 +64,15 @@ export function boardView(items, filter, sort) {
   </section>
   <div class="toolbar">
     <div class="chips">${chip('open', 'Open now')}${chip('soon', 'Ending in 24h')}${chip('all', 'All bounties')}</div>
+    <label class="search">Search <input type="search" data-search-input placeholder="Title or keyword…" value="${esc(query)}" aria-label="Search bounties"></label>
     <label class="sort">Sort <select data-sort>${sortOptions}</select></label>
   </div>
+  <p class="muted" data-match-count>${rows.length} ${rows.length === 1 ? 'bounty' : 'bounties'}</p>
   <ul class="board">
     ${rows
       .map(
         (b) => `
-      <li class="card${takingEntries(b) ? '' : ' card-ended'}">
+      <li class="card${takingEntries(b) ? '' : ' card-ended'}" data-search="${esc(`${b.title ?? ''} ${b.summary ?? ''} ${b.slug ?? ''}`.toLowerCase())}">
         <a class="card-title" href="#/bounty/${encodeURIComponent(b.slug)}">${esc(b.title)}</a>
         <p class="card-summary">${esc(b.summary ?? b.description ?? '')}</p>
         <div class="card-meta">
@@ -84,7 +90,45 @@ export function boardView(items, filter, sort) {
   ${rows.length === 0 ? '<p class="empty">No bounties match this filter.</p>' : ''}`;
 }
 
-/** A bounty's page: summary, live pot, fee, dates, rewards table, rules text. */
+/** A little markdown renderer for a bounty's rules text: headings, bullet
+ * lists and paragraphs. Everything is escaped first, so no markup the API
+ * sends can reach the page as HTML. */
+export function mdRules(text) {
+  const lines = String(text ?? '').split('\n');
+  let html = '';
+  let inList = false;
+  const closeList = () => {
+    if (inList) {
+      html += '</ul>';
+      inList = false;
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line.startsWith('## ')) {
+      closeList();
+      html += `<h3>${esc(line.slice(3))}</h3>`;
+    } else if (line.startsWith('# ')) {
+      closeList();
+      html += `<h3>${esc(line.slice(2))}</h3>`;
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      if (!inList) {
+        html += '<ul>';
+        inList = true;
+      }
+      html += `<li>${esc(line.slice(2))}</li>`;
+    } else if (line === '') {
+      closeList();
+    } else {
+      closeList();
+      html += `<p>${esc(line)}</p>`;
+    }
+  }
+  closeList();
+  return html;
+}
+
+/** A bounty's page: summary, live pot, fee, dates, rewards table, description and rules. */
 export function bountyView(b) {
   const open = takingEntries(b);
   const rewards = (b.rewardsNow ?? []).length
@@ -116,11 +160,12 @@ export function bountyView(b) {
   <table class="rewards">
     <thead><tr><th>Place</th><th>Prize</th><th>Fee share</th><th>Total</th></tr></thead>
     <tbody>
-      ${rewards.map((r) => `<tr><td>${esc(r.place)}</td><td>${money(r.baseUsd)}</td><td>${money(r.feeShareUsd)}</td><td><b>${money(r.amountUsd)}</b></td></tr>`).join('')}
+      ${rewards.map((r) => `<tr><td>${ordinal(r.place)}</td><td>${money(r.baseUsd)}</td><td>${money(r.feeShareUsd)}</td><td><b>${money(r.amountUsd)}</b></td></tr>`).join('')}
     </tbody>
   </table>
   <h2>About this bounty</h2>
   <div class="description">${paragraphs}</div>
+  ${b.rules ? `<h2>Rules</h2><div class="rules-body">${mdRules(b.rules)}</div>` : ''}
   <p class="actions"><a class="button" href="#/bounty/${encodeURIComponent(b.slug)}/leaderboard">See the leaderboard</a></p>`;
 }
 
@@ -132,9 +177,11 @@ function leaderboardRow(e, rankKey, micro) {
   const high = e.values ? e.values[`${rankKey}_high`] : e.interval?.high;
   const interval = low != null && high != null ? `${micro ? pct(low) : esc(low)} – ${micro ? pct(high) : esc(high)}` : '—';
   const size = e.values?.bytes != null ? bytes(e.values.bytes) : '—';
+  const thumb = absImage(e.image);
+  const who = `<a href="#/u/${encodeURIComponent(e.handle)}">${esc(e.handle)}</a>${e.house ? ' <span class="pill pill-house">house</span>' : ''}`;
   return `<tr>
     <td>${num(e.rank)}</td>
-    <td><a href="#/u/${encodeURIComponent(e.handle)}">${esc(e.handle)}</a>${e.house ? ' <span class="pill pill-house">house</span>' : ''}</td>
+    <td><span class="entrant">${thumb ? `<img class="thumb" crossorigin="anonymous" loading="lazy" src="${thumb}" alt="">` : ''}${who}</span></td>
     <td>${esc(e.title ?? '')}</td>
     <td><b>${shown}</b></td>
     <td>${interval}</td>
@@ -143,7 +190,9 @@ function leaderboardRow(e, rankKey, micro) {
   </tr>`;
 }
 
-/** A bounty's leaderboard: the table pages through every row locally, 25 a page, so a 4,500-row board never rebuilds the page to turn it. */
+/** A bounty's leaderboard: a podium strip for the top 3, then the table,
+ * which pages through every row locally, 25 a page, so a long board never
+ * rebuilds the page to turn it. */
 export function leaderboardView(lb, page, view) {
   const PAGE = 25;
   const full = lb.entries ?? [];
@@ -158,11 +207,24 @@ export function leaderboardView(lb, page, view) {
   const viewOptions = (lb.views ?? []).length > 1
     ? `<label class="sort">View <select data-view>${(lb.views ?? []).map((v) => `<option value="${esc(v)}"${v === view ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>`
     : '';
+  const podium = all.slice(0, 3).map((e) => {
+    const value = e.values ? e.values[rankKey] : e.value;
+    const shown = micro ? pct(value) : esc(e.display?.[rankKey] ?? value ?? '—');
+    const thumb = absImage(e.image);
+    return `<div class="podium-card">
+      <span class="podium-rank">${ordinal(e.rank)}</span>
+      ${thumb ? `<img class="thumb thumb-lg" crossorigin="anonymous" loading="lazy" src="${thumb}" alt="">` : ''}
+      <a href="#/u/${encodeURIComponent(e.handle)}">${esc(e.handle)}</a>
+      <span class="podium-score">${shown}</span>
+      <span class="podium-title">${esc(e.title ?? '')}</span>
+    </div>`;
+  }).join('');
 
   return `
   <p class="crumbs"><a href="#/">All bounties</a> &rsaquo; <a href="#/bounty/${encodeURIComponent(lb.competition.slug)}">${esc(lb.competition.title)}</a> &rsaquo; Leaderboard</p>
   <h1>${esc(lb.competition.title)} — leaderboard</h1>
   <p class="lede">${esc(lb.phase?.title ?? '')} · ${lb.phase?.scores_visible ? 'scores live' : 'scores hidden'} · ${num(all.length)} entries</p>
+  ${podium ? `<section class="podium" aria-label="Top 3">${podium}</section>` : ''}
   <div class="toolbar"><span class="muted">Page ${current} of ${pages}</span>${viewOptions}</div>
   <div class="tablewrap"><table class="board-table">
     <thead><tr><th>#</th><th>Entrant</th><th>Entry</th><th>${esc(rankCol?.title ?? 'Score')}</th><th>Interval</th><th>Size</th><th>Status</th></tr></thead>
@@ -184,8 +246,9 @@ export function profileView(p, page) {
   const slice = solutions.slice((current - 1) * PAGE, current * PAGE);
   const r = p.record ?? {};
   const initials = (p.handle ?? '?').slice(0, 2).toUpperCase();
-  const avatar = p.avatar
-    ? `<img class="avatar" crossorigin="anonymous" src="${esc(p.avatar)}" alt="">`
+  const avatarUrl = absImage(p.avatar?.url_small ?? p.avatar?.url ?? p.image);
+  const avatar = avatarUrl
+    ? `<img class="avatar" crossorigin="anonymous" src="${avatarUrl}" alt="">`
     : `<span class="avatar avatar-fallback" aria-hidden="true">${esc(initials)}</span>`;
 
   return `
@@ -203,7 +266,7 @@ export function profileView(p, page) {
     <div class="stat"><b>${num(r.competitions_entered)}</b><span>bounties entered</span></div>
     <div class="stat"><b>${num(r.competitions_placed)}</b><span>placements</span></div>
     <div class="stat"><b>${num(r.competitions_won)}</b><span>wins</span></div>
-    <div class="stat"><b>${num(r.podium_finishes)}</b><span>podiums</span></div>
+    <div class="stat"><b>${r.best_placement != null ? ordinal(r.best_placement) : '—'}</b><span>best placement</span></div>
     <div class="stat"><b>${money(r.prize_usd ?? 0)}</b><span>prizes won</span></div>
   </section>
   <h2>Entries (${num(solutions.length)})</h2>
@@ -218,10 +281,10 @@ export function profileView(p, page) {
           return `<tr>
             <td><a href="#/bounty/${encodeURIComponent(s.competition.slug)}">${esc(s.competition.title)}</a></td>
             <td>${esc(s.title ?? '')}</td>
-            <td>${s.placement != null ? `#${num(s.placement)}` : '—'}</td>
+            <td>${s.placement != null ? ordinal(s.placement) : '—'}</td>
             <td>${s.prize_usd != null ? money(s.prize_usd) : '—'}</td>
             <td>${score}</td>
-            <td>${date(s.entered_at)}</td>
+            <td>${timeAgo(s.entered_at)}</td>
           </tr>`;
         })
         .join('')}</tbody>
