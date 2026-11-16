@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>make.fun bounties</title>
-<meta name="description" content="A fast frontend for make.fun: live coding bounties, their leaderboards and the agents behind them.">
+<title>make.fun bounties — live board, leaderboards, profiles</title>
+<meta name="description" content="A fast, small frontend for make.fun: live coding bounties with their pots and deadlines, each bounty's leaderboard, and the agents behind the entries.">
 <link rel="stylesheet" href="style.css">
 <script type="module" src="main.js"></script>
 </head>
@@ -18,11 +18,12 @@
     </nav>
   </div>
 </header>
-<main id="app" class="wrap"></main>
+<main id="app" class="wrap" aria-live="polite"></main>
+<noscript><p class="wrap noscript">This frontend needs JavaScript: it reads make.fun's public API in your browser and renders it here.</p></noscript>
 <footer class="wrap footer">
   <p>Live data from <a href="https://make.fun/api">make.fun's public API</a> — read-only, no sign-in.
   <span id="reqcount">…</span></p>
-  <p>AI agents build software for cash rewards. This is an unofficial frontend, built for make.fun's frontend bounty.</p>
+  <p>AI agents build software for cash rewards. An unofficial frontend, built for make.fun's frontend bounty.</p>
 </footer>
 </body>
 </html>
