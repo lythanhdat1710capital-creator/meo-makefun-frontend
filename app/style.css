@@ -1,5 +1,6 @@
-/* make.fun bounties — a small dark theme. One stylesheet, system fonts only:
-   nothing is fetched from any origin but this app and make.fun's API. */
+/* make.fun bounties — a small dark theme. One stylesheet, system fonts
+   only: nothing is fetched from any origin but this app and make.fun's
+   API. The layout is a single column that narrows to a phone screen. */
 
 :root {
   --bg: #0d1017;
@@ -26,13 +27,19 @@ body {
 
 a { color: #8fb4ff; }
 a:hover { color: #b9d0ff; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 h1 { font-size: 30px; line-height: 1.2; margin: 18px 0 8px; letter-spacing: -0.5px; }
 h2 { font-size: 21px; margin: 30px 0 10px; }
+h3 { font-size: 17px; margin: 18px 0 6px; }
 .lede { color: var(--muted); font-size: 17px; margin: 0 0 18px; }
 .muted { color: var(--muted); font-size: 14px; }
 .empty { color: var(--muted); padding: 24px 0; }
 .loading { color: var(--muted); padding: 40px 0; }
+.noscript { color: var(--amber); padding: 24px 0; }
 
 /* Header */
 .topbar { border-bottom: 1px solid var(--line); background: #0a0d12; position: sticky; top: 0; z-index: 10; }
@@ -49,11 +56,13 @@ h2 { font-size: 21px; margin: 30px 0 10px; }
 .stat b { display: block; font-size: 24px; letter-spacing: -0.5px; }
 .stat span { color: var(--muted); font-size: 13px; }
 
-/* Board toolbar */
+/* Board toolbar: filter chips, search, sort */
 .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 18px 0 12px; }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .chip { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 14px; cursor: pointer; }
 .chip-on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.search { color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.search input { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 14px; width: 200px; }
 .sort { color: var(--muted); font-size: 14px; }
 .sort select { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 14px; }
 
@@ -86,6 +95,10 @@ h2 { font-size: 21px; margin: 30px 0 10px; }
 .statusline { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 14px; }
 .description p { margin: 0 0 12px; }
 .description { max-width: 760px; }
+.rules-body { max-width: 760px; max-height: 340px; overflow: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 18px 14px; font-size: 14.5px; }
+.rules-body p { margin: 10px 0; color: var(--text); }
+.rules-body li { margin: 4px 0; color: var(--muted); }
+.rules-body ul { padding-left: 20px; }
 
 /* Tables */
 .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
@@ -95,6 +108,16 @@ thead th { background: #10141c; color: var(--muted); font-size: 13px; text-trans
 tbody tr:last-child td { border-bottom: 0; }
 .rewards { max-width: 560px; }
 .rewards td:first-child, .rewards th:first-child { width: 90px; }
+.entrant { display: inline-flex; align-items: center; gap: 8px; }
+.thumb { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; }
+.thumb-lg { width: 40px; height: 40px; }
+
+/* Leaderboard podium: the top 3, above the table */
+.podium { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0; }
+.podium-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.podium-rank { font-size: 13px; font-weight: 800; color: var(--amber); text-transform: uppercase; letter-spacing: 0.5px; }
+.podium-score { font-size: 20px; font-weight: 800; color: var(--mint); }
+.podium-title { color: var(--muted); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* Pager */
 .pager { display: flex; gap: 14px; align-items: center; justify-content: center; margin: 18px 0 30px; color: var(--muted); font-size: 14px; }
@@ -114,10 +137,12 @@ tbody tr:last-child td { border-bottom: 0; }
 .footer { color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--line); margin-top: 40px; padding-top: 18px; padding-bottom: 32px; }
 .footer p { margin: 6px 0; }
 
-/* Phones: the stat strip stacks, tables scroll, the hero type shrinks. */
+/* Phones: the stat strip stacks, the podium stacks, tables scroll, the hero type shrinks. */
 @media (max-width: 640px) {
   h1 { font-size: 24px; }
   .stats { grid-template-columns: repeat(2, 1fr); }
+  .podium { grid-template-columns: 1fr; }
   .card-meta { gap: 10px; }
   .profile-head { flex-direction: column; }
+  .search input { width: 150px; }
 }
